@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Space Explorer: Find Asteroids!</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Comic Sans MS', cursive, sans-serif; }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 15px;
+            border-radius: 15px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.8);
+            padding: 15px;
+            border-radius: 15px;
+            text-align: center;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+        button {
+            font-family: 'Comic Sans MS', cursive, sans-serif;
+            font-size: 18px;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 10px;
+            border: none;
+            cursor: pointer;
+            background: #4CAF50;
+            color: white;
+            transition: all 0.3s;
+        }
+        button:hover {
+            background: #45a049;
+            transform: scale(1.05);
+        }
+        h1 {
+            color: #2196F3;
+            margin-top: 0;
+        }
+        #asteroidCount {
+            font-size: 24px;
+            color: #E91E63;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <h1>🚀 Space Explorer!</h1>
+        <p>Asteroids found: <span id="asteroidCount">0</span></p>
+        <div id="asteroidList"></div>
+    </div>
+    <div id="controls">
+        <button onclick="toggleSimulation()">▶️ Start/Stop</button>
+        <button onclick="resetSimulation()">🔄 Reset</button>
+        <button onclick="toggleHelp()">❓ Help</button>
+    </div>
+
+    <script>
+        let scene, camera, renderer, earth, sun, asteroids = [], paused = false;
+        
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // Add stars
+            const starGeometry = new THREE.BufferGeometry();
+            const starMaterial = new THREE.PointsMaterial({
+                color: 0xFFFFFF,
+                size: 0.1,
+                transparent: true
+            });
+            const starVertices = [];
+            for (let i = 0; i < 10000; i++) {
+                const x = THREE.MathUtils.randFloatSpread(2000);
+                const y = THREE.MathUtils.randFloatSpread(2000);
+                const z = THREE.MathUtils.randFloatSpread(2000);
+                starVertices.push(x, y, z);
+            }
+            starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+            const stars = new THREE.Points(starGeometry, starMaterial);
+            scene.add(stars);
+
+            // Add Sun
+            const sunGeometry = new THREE.SphereGeometry(5, 32, 32);
+            const sunMaterial = new THREE.MeshBasicMaterial({
+                color: 0xffff00,
+                emissive: 0xffff00,
+                emissiveIntensity: 1
+            });
+            sun = new THREE.Mesh(sunGeometry, sunMaterial);
+            scene.add(sun);
+
+            // Add Earth
+            const earthGeometry = new THREE.SphereGeometry(2, 32, 32);
+            const earthMaterial = new THREE.MeshPhongMaterial({
+                color: 0x2233ff,
+                emissive: 0x112244,
+                specular: 0x333333,
+                shininess: 25
+            });
+            earth = new THREE.Mesh(earthGeometry, earthMaterial);
+            earth.position.x = 20;
+            scene.add(earth);
+
+            // Add Earth's atmosphere
+            const atmosphereGeometry = new THREE.SphereGeometry(2.2, 32, 32);
+            const atmosphereMaterial = new THREE.MeshPhongMaterial({
+                color: 0x4444ff,
+                transparent: true,
+                opacity: 0.3
+            });
+            const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
+            earth.add(atmosphere);
+
+            // Add Lighting
+            const ambientLight = new THREE.AmbientLight(0x333333);
+            scene.add(ambientLight);
+            
+            const sunLight = new THREE.PointLight(0xffffff, 1, 100);
+            scene.add(sunLight);
+
+            // Generate asteroids
+            for (let i = 0; i < 30; i++) {
+                createAsteroid();
+            }
+
+            camera.position.z = 50;
+
+            // Add mouse control
+            document.addEventListener('mousemove', onMouseMove, false);
+        }
+
+        function createAsteroid() {
+            const sizes = [0.3, 0.4, 0.5, 0.6];
+            const asteroidGeometry = new THREE.IcosahedronGeometry(
+                sizes[Math.floor(Math.random() * sizes.length)],
+                0
+            );
+            const asteroidMaterial = new THREE.MeshPhongMaterial({
+                color: Math.random() * 0xffffff,
+                flatShading: true
+            });
+            const asteroid = new THREE.Mesh(asteroidGeometry, asteroidMaterial);
+            
+            const distance = 25 + Math.random() * 15;
+            const angle = Math.random() * Math.PI * 2;
+            
+            asteroid.position.x = Math.cos(angle) * distance;
+            asteroid.position.z = Math.sin(angle) * distance;
+            asteroid.position.y = (Math.random() - 0.5) * 10;
+            
+            asteroid.userData = {
+                distance: distance,
+                angle: angle,
+                rotationSpeed: 0.02 + Math.random() * 0.02,
+                orbitSpeed: 0.001 + Math.random() * 0.002,
+                detected: false
+            };
+            
+            asteroids.push(asteroid);
+            scene.add(asteroid);
+        }
+
+        let mouseX = 0, mouseY = 0;
+        function onMouseMove(event) {
+            mouseX = (event.clientX - window.innerWidth / 2) / 100;
+            mouseY = (event.clientY - window.innerHeight / 2) / 100;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            if (!paused) {
+                // Update camera position based on mouse
+                camera.position.x += (mouseX - camera.position.x) * 0.05;
+                camera.position.y += (-mouseY - camera.position.y) * 0.05;
+                camera.lookAt(scene.position);
+
+                // Rotate Earth
+                earth.rotation.y += 0.005;
+
+                // Update asteroid positions
+                asteroids.forEach(asteroid => {
+                    asteroid.userData.angle += asteroid.userData.orbitSpeed;
+                    asteroid.position.x = Math.cos(asteroid.userData.angle) * asteroid.userData.distance;
+                    asteroid.position.z = Math.sin(asteroid.userData.angle) * asteroid.userData.distance;
+                    asteroid.rotation.y += asteroid.userData.rotationSpeed;
+                });
+
+                detectNearEarthObjects();
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        function detectNearEarthObjects() {
+            let detectedCount = 0;
+            const detectionRadius = 8;
+            const asteroidList = document.getElementById('asteroidList');
+            asteroidList.innerHTML = '';
+
+            asteroids.forEach((asteroid, index) => {
+                const distance = asteroid.position.distanceTo(earth.position);
+                if (distance < detectionRadius) {
+                    if (!asteroid.userData.detected) {
+                        asteroid.material.color.setHex(0xff0000);
+                        asteroid.userData.detected = true;
+                    }
+                    detectedCount++;
+                    const listItem = document.createElement('p');
+                    listItem.style.marginBottom = '5px';
+                    listItem.innerHTML = `🌟 Space Rock #${index + 1}: ${distance.toFixed(1)} space units away!`;
+                    asteroidList.appendChild(listItem);
+                } else if (asteroid.userData.detected) {
+                    asteroid.material.color.setHex(Math.random() * 0xffffff);
+                    asteroid.userData.detected = false;
+                }
+            });
+
+            document.getElementById('asteroidCount').textContent = detectedCount;
+        }
+
+        function toggleSimulation() {
+            paused = !paused;
+        }
+
+        function resetSimulation() {
+            asteroids.forEach(asteroid => {
+                asteroid.userData.angle = Math.random() * Math.PI * 2;
+                asteroid.userData.detected = false;
+                asteroid.material.color.setHex(Math.random() * 0xffffff);
+            });
+        }
+
+        function toggleHelp() {
+            alert("🎮 How to play:\n\n" +
+                  "1. Move your mouse to look around space!\n" +
+                  "2. Watch for asteroids that come close to Earth\n" +
+                  "3. Detected asteroids turn red\n" +
+                  "4. Try to find as many space rocks as you can!\n\n" +
+                  "Be a space explorer and have fun! 🚀✨");
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        window.addEventListener('resize', onWindowResize, false);
+
+        init();
+        animate();
+    </script>
+</body>
+</html>
